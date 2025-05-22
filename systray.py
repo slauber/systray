@@ -9,6 +9,10 @@ import os
 import requests
 import sys
 import ctypes
+import winreg
+import subprocess
+import watchdog.observers
+import watchdog.events
 from ctypes import wintypes, Structure, c_int, c_uint, c_void_p, sizeof, byref, create_unicode_buffer, windll
 from dotenv import load_dotenv
 
@@ -16,6 +20,9 @@ logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
+
+# Version information
+VERSION = "1.0.1"
 
 # Define Shell_NotifyIconW function
 Shell_NotifyIconW = windll.shell32.Shell_NotifyIconW
@@ -33,6 +40,19 @@ class NOTIFYICONDATA(Structure):
         ('szTip', wintypes.WCHAR * 128)
     ]
 
+class EnvFileHandler(watchdog.events.FileSystemEventHandler):
+    def __init__(self, callback):
+        self.callback = callback
+        self.last_modified = time.time()
+
+    def on_modified(self, event):
+        if event.src_path.endswith('.env'):
+            # Debounce multiple events
+            current_time = time.time()
+            if current_time - self.last_modified > 1:  # 1 second debounce
+                self.last_modified = current_time
+                self.callback()
+
 class SystemTray:
     def __init__(self, config):
         self.config = config
@@ -41,7 +61,54 @@ class SystemTray:
         self.icons = {}
         self.update_thread = None
         self.running = False
+        self.autorun_enabled = self.is_autorun_enabled()
         self.initialize_window()
+        self.start_env_watcher()
+
+    def start_env_watcher(self):
+        """Start watching the .env file for changes."""
+        try:
+            env_path = os.path.abspath('.env')
+            if os.path.exists(env_path):
+                event_handler = EnvFileHandler(self.restart_application)
+                observer = watchdog.observers.Observer()
+                observer.schedule(event_handler, path=os.path.dirname(env_path), recursive=False)
+                observer.start()
+                logger.info("Started .env file watcher")
+        except Exception as e:
+            logger.error(f"Error starting .env file watcher: {e}")
+
+    def restart_application(self):
+        """Restart the application when .env file changes."""
+        logger.info("Detected .env file change, restarting application...")
+        self.running = False
+        # Use a separate thread to restart to avoid blocking
+        threading.Thread(target=self._restart_thread).start()
+
+    def _restart_thread(self):
+        """Thread function to handle restart."""
+        try:
+            # Wait a moment for cleanup
+            time.sleep(1)
+            # Reload environment variables
+            load_dotenv(override=True)
+            # Start new process
+            python = sys.executable
+            os.execl(python, python, *sys.argv)
+        except Exception as e:
+            logger.error(f"Error restarting application: {e}")
+
+    def open_env_file(self):
+        """Open the .env file in the default text editor."""
+        try:
+            env_path = os.path.abspath('.env')
+            if os.path.exists(env_path):
+                os.startfile(env_path)
+                logger.info("Opened .env file")
+            else:
+                logger.error(".env file not found")
+        except Exception as e:
+            logger.error(f"Error opening .env file: {e}")
 
     def initialize_window(self):
         """Initialize the window for system tray icons."""
@@ -81,6 +148,46 @@ class SystemTray:
             logger.error(f"Error initializing window: {e}")
             raise
 
+    def is_autorun_enabled(self) -> bool:
+        """Check if the application is set to run at startup."""
+        try:
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_READ)
+            try:
+                winreg.QueryValueEx(key, "SystemTrayMonitor")
+                return True
+            except FileNotFoundError:
+                return False
+            finally:
+                winreg.CloseKey(key)
+        except Exception as e:
+            logger.error(f"Error checking autorun status: {e}")
+            return False
+
+    def toggle_autorun(self) -> bool:
+        """Toggle autorun status for the current user."""
+        try:
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_SET_VALUE)
+            try:
+                if self.autorun_enabled:
+                    # Remove autorun
+                    winreg.DeleteValue(key, "SystemTrayMonitor")
+                    self.autorun_enabled = False
+                    logger.info("Autorun disabled")
+                else:
+                    # Add autorun
+                    script_path = os.path.abspath(sys.argv[0])
+                    python_path = sys.executable
+                    command = f'"{python_path}" "{script_path}"'
+                    winreg.SetValueEx(key, "SystemTrayMonitor", 0, winreg.REG_SZ, command)
+                    self.autorun_enabled = True
+                    logger.info("Autorun enabled")
+                return True
+            finally:
+                winreg.CloseKey(key)
+        except Exception as e:
+            logger.error(f"Error toggling autorun: {e}")
+            return False
+
     def wnd_proc(self, hwnd, msg, wparam, lparam):
         """Window procedure for handling messages."""
         if msg == win32con.WM_DESTROY:
@@ -91,6 +198,16 @@ class SystemTray:
             if lparam == win32con.WM_RBUTTONUP:
                 # Create popup menu
                 menu = win32gui.CreatePopupMenu()
+                # Add version info (disabled)
+                win32gui.AppendMenu(menu, win32con.MF_STRING | win32con.MF_GRAYED, 0, f"System Tray Monitor v{VERSION}")
+                win32gui.AppendMenu(menu, win32con.MF_SEPARATOR, 0, "")
+                # Add autorun toggle menu item
+                autorun_text = "Disable Autorun" if self.autorun_enabled else "Enable Autorun"
+                win32gui.AppendMenu(menu, win32con.MF_STRING, 2, autorun_text)
+                win32gui.AppendMenu(menu, win32con.MF_SEPARATOR, 0, "")
+                # Add open .env file option
+                win32gui.AppendMenu(menu, win32con.MF_STRING, 3, "Open Configuration")
+                win32gui.AppendMenu(menu, win32con.MF_SEPARATOR, 0, "")
                 win32gui.AppendMenu(menu, win32con.MF_STRING, 1, "Quit")
                 
                 # Get cursor position
@@ -114,6 +231,10 @@ class SystemTray:
             if wparam == 1:  # Quit option
                 self.running = False
                 win32gui.PostQuitMessage(0)
+            elif wparam == 2:  # Autorun toggle
+                self.toggle_autorun()
+            elif wparam == 3:  # Open .env file
+                self.open_env_file()
             return 0
         return win32gui.DefWindowProc(hwnd, msg, wparam, lparam)
 

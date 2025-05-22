@@ -2,11 +2,18 @@
 
 A Windows system tray application that displays real-time values from a JSON API as system tray icons. Each icon shows a label and a value that updates periodically.
 
+![System Tray Monitor Screenshot](assets/screenshot.png)
+
 ## Features
 
 - Multiple system tray icons with labels and values
 - Configurable polling interval for API updates
-- Right-click menu with Quit option
+- Right-click menu with:
+  - Version information
+  - Autorun toggle (start with Windows)
+  - Configuration file editor
+  - Quit option
+- Automatic restart on configuration changes
 - Customizable font settings
 - Environment-based configuration
 - Automatic error handling and recovery
@@ -78,7 +85,25 @@ python systray.py
    - Updates automatically based on POLL_INTERVAL
 
 4. Right-click any icon to:
+   - View version information
+   - Enable/Disable autorun (start with Windows)
+   - Open configuration file for editing
    - Quit the application
+
+### Autorun Feature
+
+The application can be configured to start automatically with Windows:
+1. Right-click any system tray icon
+2. Click "Enable Autorun" to make the app start with Windows
+3. Click "Disable Autorun" to remove it from startup
+
+### Configuration Changes
+
+The application automatically detects changes to the `.env` file:
+1. Right-click any system tray icon
+2. Click "Open Configuration" to edit the `.env` file
+3. Save your changes
+4. The application will automatically restart with the new configuration
 
 ## Troubleshooting
 
@@ -98,6 +123,11 @@ python systray.py
    - Verify your API URL
    - Check your network connection
    - Ensure the API is accessible
+
+4. **Autorun not working**
+   - Check if you have administrator privileges
+   - Verify the Windows Registry permissions
+   - Check the application logs for errors
 
 ### Logging
 
@@ -120,7 +150,7 @@ To add a new icon:
 ICON_NEWLABEL=json.path.to.value
 ```
 
-2. Restart the application
+2. The application will automatically detect the change and restart with the new icon
 
 ### Building from Source
 
