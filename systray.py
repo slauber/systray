@@ -13,8 +13,11 @@ import winreg
 import subprocess
 import watchdog.observers
 import watchdog.events
+import winshell
+from win32com.client import Dispatch
 from ctypes import wintypes, Structure, c_int, c_uint, c_void_p, sizeof, byref, create_unicode_buffer, windll
 from dotenv import load_dotenv
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +25,33 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 # Version information
-VERSION = "1.0.1"
+VERSION = "1.0.2"
+
+def setup_logging(log_to_file=False):
+    """Set up logging configuration."""
+    log_format = '%(asctime)s - %(levelname)s - %(message)s'
+    handlers = []
+    
+    # Console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(logging.Formatter(log_format))
+    handlers.append(console_handler)
+    
+    # File handler if requested
+    if log_to_file:
+        log_dir = os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), 'logs')
+        os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, f'systray_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log')
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setFormatter(logging.Formatter(log_format))
+        handlers.append(file_handler)
+    
+    # Configure root logger
+    logging.basicConfig(
+        level=logging.INFO,
+        format=log_format,
+        handlers=handlers
+    )
 
 # Define Shell_NotifyIconW function
 Shell_NotifyIconW = windll.shell32.Shell_NotifyIconW
@@ -151,39 +180,71 @@ class SystemTray:
     def is_autorun_enabled(self) -> bool:
         """Check if the application is set to run at startup."""
         try:
-            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_READ)
-            try:
-                winreg.QueryValueEx(key, "SystemTrayMonitor")
-                return True
-            except FileNotFoundError:
-                return False
-            finally:
-                winreg.CloseKey(key)
+            startup_folder = winshell.startup()
+            shortcut_path = os.path.join(startup_folder, "SystemTrayMonitor.lnk")
+            return os.path.exists(shortcut_path)
         except Exception as e:
             logger.error(f"Error checking autorun status: {e}")
             return False
 
-    def toggle_autorun(self) -> bool:
-        """Toggle autorun status for the current user."""
+    def generate_batch_file(self) -> str:
+        """Generate a batch file to start the application and return its path."""
         try:
-            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_SET_VALUE)
-            try:
-                if self.autorun_enabled:
-                    # Remove autorun
-                    winreg.DeleteValue(key, "SystemTrayMonitor")
-                    self.autorun_enabled = False
-                    logger.info("Autorun disabled")
-                else:
-                    # Add autorun
-                    script_path = os.path.abspath(sys.argv[0])
-                    python_path = sys.executable
-                    command = f'"{python_path}" "{script_path}"'
-                    winreg.SetValueEx(key, "SystemTrayMonitor", 0, winreg.REG_SZ, command)
-                    self.autorun_enabled = True
-                    logger.info("Autorun enabled")
-                return True
-            finally:
-                winreg.CloseKey(key)
+            script_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+            batch_path = os.path.join(script_dir, "start_systray.bat")
+            pythonw_path = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+            script_path = os.path.abspath(sys.argv[0])
+            
+            # Create batch file content
+            batch_content = f'''@echo off
+cd /d "{script_dir}"
+start /b "" "{pythonw_path}" "{script_path}"
+'''
+            
+            # Write batch file
+            with open(batch_path, 'w') as f:
+                f.write(batch_content)
+            
+            logger.info(f"Generated batch file at {batch_path}")
+            return batch_path
+        except Exception as e:
+            logger.error(f"Error generating batch file: {e}")
+            return None
+
+    def toggle_autorun(self) -> bool:
+        """Toggle autorun status for the current user using a Windows shortcut."""
+        try:
+            startup_folder = winshell.startup()
+            shortcut_path = os.path.join(startup_folder, "SystemTrayMonitor.lnk")
+            script_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+            
+            if self.autorun_enabled:
+                # Remove autorun
+                if os.path.exists(shortcut_path):
+                    os.remove(shortcut_path)
+                # Clean up batch file
+                batch_path = os.path.join(script_dir, "start_systray.bat")
+                if os.path.exists(batch_path):
+                    os.remove(batch_path)
+                self.autorun_enabled = False
+                logger.info("Autorun disabled")
+            else:
+                # Generate batch file
+                batch_path = self.generate_batch_file()
+                if not batch_path:
+                    return False
+                
+                # Create shortcut to batch file
+                shell = Dispatch('WScript.Shell')
+                shortcut = shell.CreateShortCut(shortcut_path)
+                shortcut.Targetpath = batch_path
+                shortcut.WorkingDirectory = script_dir
+                shortcut.Description = "System Tray Monitor"
+                shortcut.save()
+                
+                self.autorun_enabled = True
+                logger.info("Autorun enabled")
+            return True
         except Exception as e:
             logger.error(f"Error toggling autorun: {e}")
             return False
@@ -508,11 +569,11 @@ class SystemTray:
                 time.sleep(5)  # Wait a bit before retrying
 
 if __name__ == "__main__":
+    # Parse command line arguments
+    log_to_file = "--log-to-file" in sys.argv
+    
     # Set up logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s'
-    )
+    setup_logging(log_to_file)
     
     # Get icon configuration from environment
     icons = []

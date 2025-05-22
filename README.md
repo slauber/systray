@@ -17,6 +17,7 @@ A Windows system tray application that displays real-time values from a JSON API
 - Customizable font settings
 - Environment-based configuration
 - Automatic error handling and recovery
+- File-based logging for debugging
 
 ## Requirements
 
@@ -74,7 +75,11 @@ ICON_TEMP=temp
 
 1. Start the application:
 ```bash
+# Normal start (console logging)
 python systray.py
+
+# Start with file logging
+python systray.py --log-to-file
 ```
 
 2. The application will create system tray icons for each configured value.
@@ -97,6 +102,12 @@ The application can be configured to start automatically with Windows:
 2. Click "Enable Autorun" to make the app start with Windows
 3. Click "Disable Autorun" to remove it from startup
 
+The autorun feature:
+- Creates a Windows shortcut in the startup folder
+- Uses a background batch file to ensure proper working directory
+- Runs without showing any command windows
+- Automatically logs to files in the `logs` directory
+
 ### Configuration Changes
 
 The application automatically detects changes to the `.env` file:
@@ -104,6 +115,18 @@ The application automatically detects changes to the `.env` file:
 2. Click "Open Configuration" to edit the `.env` file
 3. Save your changes
 4. The application will automatically restart with the new configuration
+
+### Logging
+
+The application supports two logging modes:
+1. **Console Logging** (default):
+   - Shows logs in the console window
+   - Useful for development and debugging
+
+2. **File Logging** (with `--log-to-file`):
+   - Creates timestamped log files in the `logs` directory
+   - Useful for troubleshooting autorun issues
+   - Log files are named `systray_YYYYMMDD_HHMMSS.log`
 
 ## Troubleshooting
 
@@ -124,14 +147,9 @@ The application automatically detects changes to the `.env` file:
    - Check your network connection
    - Ensure the API is accessible
 
-4. **Autorun not working**
-   - Check if you have administrator privileges
-   - Verify the Windows Registry permissions
-   - Check the application logs for errors
-
 ### Logging
 
-The application logs to the console with timestamps. Check the logs for detailed error messages and debugging information.
+The application logs to either the console or files with timestamps. Check the logs for detailed error messages and debugging information.
 
 ## Development
 
@@ -140,6 +158,7 @@ The application logs to the console with timestamps. Check the logs for detailed
 - `systray.py`: Main application code
 - `.env`: Configuration file
 - `requirements.txt`: Python package dependencies
+- `logs/`: Directory containing log files (when using file logging)
 
 ### Adding New Icons
 
@@ -158,7 +177,13 @@ No build step is required. The application runs directly from the Python source.
 
 ## License
 
-[Your chosen license]
+Copyright 2025 - Sebastian Lauber
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ## Contributing
 
