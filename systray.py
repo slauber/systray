@@ -8,9 +8,6 @@ from PIL import Image, ImageDraw, ImageFont
 import os
 import requests
 import sys
-import ctypes
-import winreg
-import subprocess
 import watchdog.observers
 import watchdog.events
 import winshell
@@ -25,7 +22,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 # Version information
-VERSION = "1.0.2"
+VERSION = "1.0.3"
 
 def setup_logging(log_to_file=False):
     """Set up logging configuration."""
@@ -485,8 +482,8 @@ start /b "" "{pythonw_path}" "{script_path}"
             max_width = max(label_width, value_width)
             
             # Calculate positions
-            label_position = ((32 - label_width) // 2, 2)
-            value_position = ((32 - value_width) // 2, 18)
+            label_position = ((32 - label_width) // 2, 1)
+            value_position = ((32 - value_width) // 2, 12)
             
             # Draw each line separately with different fonts
             draw.text(label_position, label, fill='black', font=label_font)
